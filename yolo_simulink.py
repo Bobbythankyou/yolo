@@ -21,7 +21,7 @@ thread_started = False
 
 # ===== 后台线程 =====
 def camera_loop():
-    global latest_result
+    global latest_result, running
 
     if not cap.isOpened():
         print("Camera not opened")
@@ -37,10 +37,18 @@ def camera_loop():
         # ===== YOLO检测 =====
         results = model(frame)
 
-        # ===== 可视化（重点）=====
+        # ===== 可视化 =====
         annotated_frame = results[0].plot()
         cv2.imshow("YOLO Detection", annotated_frame)
-        cv2.waitKey(1)
+
+        # ===== 关键：监听按键（防卡死）=====
+        key = cv2.waitKey(1) & 0xFF
+
+        # ESC 或 q 退出
+        if key == 27 or key == ord('q'):
+            print("Closing camera...")
+            running = False
+            break
 
         # ===== 分类结果 =====
         if len(results[0].boxes) == 0:
@@ -62,6 +70,11 @@ def camera_loop():
             latest_result = 4
         else:
             latest_result = 0
+
+    # ===== 退出释放资源 =====
+    cap.release()
+    cv2.destroyAllWindows()
+    print("Camera released.")
 
 
 # ===== 启动线程 =====
