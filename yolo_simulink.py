@@ -10,21 +10,23 @@ MODEL_PATH = os.path.join(BASE_DIR, 'runs', 'detect', 'train7', 'weights', 'best
 # ===== 模型 =====
 model = YOLO(MODEL_PATH)
 
-# ===== 摄像头 =====
-cap = cv2.VideoCapture(0)
-
 # ===== 全局变量 =====
 latest_result = 0
-running = True
+running = False
 thread_started = False
+cap = None
 
 
 # ===== 后台线程 =====
 def camera_loop():
-    global latest_result, running
+    global latest_result, running, cap, thread_started
+
+    # 👉 每次都重新创建摄像头
+    cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
         print("Camera not opened")
+        thread_started = False
         return
 
     cv2.namedWindow("YOLO Detection", cv2.WINDOW_NORMAL)
@@ -34,31 +36,25 @@ def camera_loop():
         if not ret:
             continue
 
-        # ===== YOLO检测 =====
         results = model(frame)
-
-        # ===== 可视化 =====
         annotated_frame = results[0].plot()
         cv2.imshow("YOLO Detection", annotated_frame)
 
-        # ===== 关键：监听按键（防卡死）=====
         key = cv2.waitKey(1) & 0xFF
 
-        # ESC 或 q 退出
+        # ESC / q 退出
         if key == 27 or key == ord('q'):
             print("Closing camera...")
             running = False
             break
 
-        # ===== 分类结果 =====
+        # ===== 分类 =====
         if len(results[0].boxes) == 0:
             latest_result = 0
             continue
 
         cls = int(results[0].boxes.cls[0])
         label = results[0].names[cls]
-
-        print("Detected:", label)
 
         if label == 'apple':
             latest_result = 1
@@ -71,17 +67,26 @@ def camera_loop():
         else:
             latest_result = 0
 
-    # ===== 退出释放资源 =====
-    cap.release()
+    # ===== 完整释放 =====
+    if cap is not None:
+        cap.release()
+
     cv2.destroyAllWindows()
-    print("Camera released.")
+
+    # 👉 重置状态（关键！！！）
+    thread_started = False
+    running = False
+
+    print("Camera fully released.")
 
 
 # ===== 启动线程 =====
 def start_camera():
-    global thread_started
+    global thread_started, running
+
     if not thread_started:
-        t = threading.Thread(target=camera_loop, daemon=True)
+        running = True
+        t = threading.Thread(target=camera_loop)
         t.start()
         thread_started = True
 
