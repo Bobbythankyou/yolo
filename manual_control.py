@@ -3,15 +3,20 @@ import threading
 import keyboard
 import time
 
+# ===== 全局变量 =====
 current_target = np.array([0.65, 0.0, 0.29])
 gripper = 0
 
 step = 0.01
+
 thread_started = False
+debug_started = False
+running = True
 
 
+# ===== 键盘回调 =====
 def on_key(event):
-    global current_target, gripper
+    global current_target, gripper, running
 
     key = event.name
     print(f"[KEY] Pressed: {key}")
@@ -32,34 +37,51 @@ def on_key(event):
         gripper = 0
     elif key == 'p':
         gripper = 1
+    elif key == 'esc':
+        print("[EXIT] ESC pressed, shutting down...")
+        running = False
+        keyboard.unhook_all()   # ✅ 关键：解绑监听
 
     print(f"[STATE] target={current_target}, gripper={gripper}")
 
 
+# ===== 启动键盘监听 =====
 def start_keyboard():
     global thread_started
 
     if not thread_started:
         print("[INIT] Keyboard listener started ✅")
-
         keyboard.on_press(on_key)
-
         thread_started = True
 
 
-# ===== 定时打印（防止你不知道有没有更新）=====
+# ===== debug线程 =====
 def debug_loop():
-    while True:
+    global running
+    while running:
         print(f"[LOOP] current_target={current_target}, gripper={gripper}")
         time.sleep(2)
 
+    print("[DEBUG] loop stopped")
+
 
 def start_debug():
-    t = threading.Thread(target=debug_loop, daemon=True)
-    t.start()
+    global debug_started
+
+    if not debug_started:
+        t = threading.Thread(target=debug_loop, daemon=True)
+        t.start()
+        debug_started = True
 
 
+# ===== 主接口 =====
 def get_control():
+    global running
+
+    if not running:
+        print("[INFO] System stopped")
+        return [0.0, 0.0, 0.0, 0.0]
+
     start_keyboard()
     start_debug()
 
