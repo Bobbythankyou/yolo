@@ -1,73 +1,73 @@
 import numpy as np
 import threading
-import time
 import keyboard
+import time
 
-# ===== 全局变量 =====
-current_target = np.array([0.45, 0.0, 0.20])  # 初始位置
-gripper = 0  # 0=open, 1=close
+current_target = np.array([0.65, 0.0, 0.29])
+gripper = 0
 
 step = 0.01
-running = True
-
-
-# ===== 键盘监听线程 =====
-def keyboard_loop():
-    global current_target, gripper, running
-
-    while running:
-        try:
-            # ===== 位置控制 =====
-            if keyboard.is_pressed('w'):
-                current_target[0] += step
-            if keyboard.is_pressed('s'):
-                current_target[0] -= step
-
-            if keyboard.is_pressed('a'):
-                current_target[1] += step
-            if keyboard.is_pressed('d'):
-                current_target[1] -= step
-
-            if keyboard.is_pressed('q'):
-                current_target[2] += step
-            if keyboard.is_pressed('e'):
-                current_target[2] -= step
-
-            # ===== 夹爪控制 =====
-            if keyboard.is_pressed('o'):
-                gripper = 0
-            if keyboard.is_pressed('p'):
-                gripper = 1
-
-            # ===== 退出 =====
-            if keyboard.is_pressed('esc'):
-                running = False
-                break
-
-            time.sleep(0.05)
-
-        except:
-            pass
-
-
-# ===== 启动线程（只启动一次）=====
 thread_started = False
+
+
+def on_key(event):
+    global current_target, gripper
+
+    key = event.name
+    print(f"[KEY] Pressed: {key}")
+
+    if key == 'w':
+        current_target[0] += step
+    elif key == 's':
+        current_target[0] -= step
+    elif key == 'a':
+        current_target[1] += step
+    elif key == 'd':
+        current_target[1] -= step
+    elif key == 'q':
+        current_target[2] += step
+    elif key == 'e':
+        current_target[2] -= step
+    elif key == 'o':
+        gripper = 0
+    elif key == 'p':
+        gripper = 1
+
+    print(f"[STATE] target={current_target}, gripper={gripper}")
+
 
 def start_keyboard():
     global thread_started
+
     if not thread_started:
-        t = threading.Thread(target=keyboard_loop, daemon=True)
-        t.start()
+        print("[INIT] Keyboard listener started ✅")
+
+        keyboard.on_press(on_key)
+
         thread_started = True
 
 
-# ===== 给Simulink调用的函数 =====
+# ===== 定时打印（防止你不知道有没有更新）=====
+def debug_loop():
+    while True:
+        print(f"[LOOP] current_target={current_target}, gripper={gripper}")
+        time.sleep(2)
+
+
+def start_debug():
+    t = threading.Thread(target=debug_loop, daemon=True)
+    t.start()
+
+
 def get_control():
     start_keyboard()
+    start_debug()
+
+    print("[CALL] get_control called")
 
     return [
         float(current_target[0]),
         float(current_target[1]),
         float(current_target[2]),
-        float(gripper)   # ✅ 改这里
+        float(gripper)
     ]
