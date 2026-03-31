@@ -4,7 +4,7 @@ import keyboard
 import time
 
 # ===== 全局变量 =====
-current_target = np.array([0.65, 0.0, 0.29])
+current_target = np.array([0.65, 0.0, 0.29], dtype=float)
 gripper = 0
 
 step = 0.01
@@ -21,26 +21,36 @@ def on_key(event):
     key = event.name
     print(f"[KEY] Pressed: {key}")
 
-    if key == 'w':
-        current_target[0] += step
-    elif key == 's':
-        current_target[0] -= step
+    # ===== 平面 + 高度控制 =====
+    # x轴：前后
+    if key == 'i':
+        current_target[0] += step   # 前
+    elif key == 'k':
+        current_target[0] -= step   # 后
+
+    # y轴：左右
     elif key == 'a':
-        current_target[1] += step
+        current_target[1] += step   # 左
     elif key == 'd':
-        current_target[1] -= step
+        current_target[1] -= step   # 右
+
+    # z轴：上下
+    elif key == 'w':
+        current_target[2] += step   # 上
+    elif key == 's':
+        current_target[2] -= step   # 下
+
+    # ===== 抓手 =====
     elif key == 'q':
-        current_target[2] += step
+        gripper = 1   # 抓取
     elif key == 'e':
-        current_target[2] -= step
-    elif key == 'o':
-        gripper = 0
-    elif key == 'p':
-        gripper = 1
+        gripper = 0   # 松开
+
+    # ===== 退出 =====
     elif key == 'esc':
         print("[EXIT] ESC pressed, shutting down...")
         running = False
-        keyboard.unhook_all()   # ✅ 关键：解绑监听
+        keyboard.unhook_all()
 
     print(f"[STATE] target={current_target}, gripper={gripper}")
 
@@ -48,7 +58,6 @@ def on_key(event):
 # ===== 启动键盘监听 =====
 def start_keyboard():
     global thread_started
-
     if not thread_started:
         print("[INIT] Keyboard listener started ✅")
         keyboard.on_press(on_key)
@@ -61,13 +70,11 @@ def debug_loop():
     while running:
         print(f"[LOOP] current_target={current_target}, gripper={gripper}")
         time.sleep(2)
-
     print("[DEBUG] loop stopped")
 
 
 def start_debug():
     global debug_started
-
     if not debug_started:
         t = threading.Thread(target=debug_loop, daemon=True)
         t.start()
