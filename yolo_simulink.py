@@ -10,6 +10,9 @@ MODEL_PATH = os.path.join(BASE_DIR, 'runs', 'detect', 'train7', 'weights', 'best
 # ===== 模型 =====
 model = YOLO(MODEL_PATH)
 
+# ===== 参数（核心）=====
+CONF_THRESHOLD = 0.75   # ⭐ 你要的阈值
+
 # ===== 全局变量 =====
 latest_result = 0
 running = False
@@ -21,11 +24,10 @@ cap = None
 def camera_loop():
     global latest_result, running, cap, thread_started
 
-    # 👉 每次都重新创建摄像头
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(2)
 
     if not cap.isOpened():
-        print("Camera not opened")
+        print("❌ Camera not opened")
         thread_started = False
         return
 
@@ -36,48 +38,66 @@ def camera_loop():
         if not ret:
             continue
 
+        # ===== YOLO 推理 =====
         results = model(frame)
         annotated_frame = results[0].plot()
         cv2.imshow("YOLO Detection", annotated_frame)
 
         key = cv2.waitKey(1) & 0xFF
 
-        # ESC / q 退出
+        # ===== 退出 =====
         if key == 27 or key == ord('q'):
-            print("Closing camera...")
+            print("🛑 Closing camera...")
             running = False
             break
 
-        # ===== 分类 =====
-        if len(results[0].boxes) == 0:
+        boxes = results[0].boxes
+
+        # ===== 没检测到 =====
+        if boxes is None or len(boxes) == 0:
             latest_result = 0
+            # print("🚫 No detection")
             continue
 
-        cls = int(results[0].boxes.cls[0])
+        # ===== 取置信度 =====
+        confs = boxes.conf.cpu().numpy()
+        best_idx = confs.argmax()
+        best_conf = confs[best_idx]
+
+        # print(f"🔍 Best confidence: {best_conf:.2f}")
+
+        # ===== 阈值过滤（核心）=====
+        if best_conf < CONF_THRESHOLD:
+            latest_result = 0
+            # print("⚠️ Confidence too low, ignored")
+            continue
+
+        # ===== 获取类别 =====
+        cls = int(boxes.cls[best_idx])
         label = results[0].names[cls]
 
-        if label == 'apple':
+        print(f"✅ Detected: {label} ({best_conf:.2f})")
+
+        # ===== 分类映射 =====
+        if label == 'strawberry':
             latest_result = 1
         elif label == 'banana':
             latest_result = 2
-        elif label == 'orange':
+        elif label == 'Tomato':
             latest_result = 3
-        elif label == 'strawberry':
-            latest_result = 4
         else:
             latest_result = 0
 
-    # ===== 完整释放 =====
+    # ===== 释放资源 =====
     if cap is not None:
         cap.release()
 
     cv2.destroyAllWindows()
 
-    # 👉 重置状态（关键！！！）
     thread_started = False
     running = False
 
-    print("Camera fully released.")
+    print("✅ Camera fully released.")
 
 
 # ===== 启动线程 =====

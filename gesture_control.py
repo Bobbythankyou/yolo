@@ -13,16 +13,18 @@ thread_started = False
 
 # ===== 参数 =====
 RADIUS = 150
-STEP_XY = 0.015   # 稍微调大一点更自然
+STEP_XY = 0.02
 
-Z_BASE_GAIN = 0.05
-Z_DYNAMIC_GAIN = 0.3
+# ===== Z控制 =====
+Z_DEADZONE = 0.01
+Z_SCALE = 5.0
+Z_STEP = 0.02
 
 OPEN_THRESHOLD = 3
 CLOSE_THRESHOLD = 3
 
-MIN_BOUND = np.array([0.5, -0.3, 0.2])
-MAX_BOUND = np.array([0.8,  0.3, 0.5])
+MIN_BOUND = np.array([0.4, -0.4, 0.15])
+MAX_BOUND = np.array([0.9,  0.4, 0.6])
 
 # ===== Mediapipe =====
 mp_hands = mp.solutions.hands
@@ -84,7 +86,6 @@ def camera_loop():
                 # ===== 画手 =====
                 mp_draw.draw_landmarks(frame, handLms, mp_hands.HAND_CONNECTIONS)
 
-                # ===== 手掌中心 =====
                 cx = int(handLms.landmark[0].x * w)
                 cy = int(handLms.landmark[0].y * h)
 
@@ -103,44 +104,63 @@ def camera_loop():
                     if close_counter >= CLOSE_THRESHOLD:
                         gripper = 1
 
-                # ===== 统一3D控制（核心🔥）=====
+                # =========================
+                # ===== XY 单轴控制 =====
+                # =========================
+                dx = cx - center[0]
+                dy = cy - center[1]
+                dist = np.sqrt(dx**2 + dy**2)
 
-                # XY方向（相对中心）
-                dx = (cx - center[0]) / w
-                dy = (cy - center[1]) / h
+                move_xy = np.array([0.0, 0.0, 0.0])
 
-                # 👉 死区（避免抖动）
-                if abs(dx) < 0.05:
-                    dx = 0
-                if abs(dy) < 0.05:
-                    dy = 0
+                if dist > RADIUS:
+                    # 👉 判断主方向（只允许一个轴动）
+                    if abs(dx) > abs(dy):
+                        # 左右
+                        if dx > 0:
+                            move_xy[0] = STEP_XY
+                        else:
+                            move_xy[0] = -STEP_XY
+                    else:
+                        # 上下
+                        if dy > 0:
+                            move_xy[1] = STEP_XY
+                        else:
+                            move_xy[1] = -STEP_XY
 
-                # Z方向（手掌大小）
+                # =========================
+                # ===== Z 滑杆控制 =====
+                # =========================
                 hand_size = get_hand_size(handLms)
 
                 if base_hand_size is None:
                     base_hand_size = hand_size
 
                 dz = hand_size - base_hand_size
-                dz = np.clip(dz, -0.05, 0.05)
 
-                # 平滑更新
-                base_hand_size = 0.9 * base_hand_size + 0.1 * hand_size
+                if abs(dz) < Z_DEADZONE:
+                    dz = 0
+                else:
+                    dz = dz * Z_SCALE
 
-                # ===== 合成3D向量 =====
-                move_vec = np.array([
-                    dx * STEP_XY,
-                    dy * STEP_XY,
-                    dz * (Z_BASE_GAIN + Z_DYNAMIC_GAIN * abs(dz))
-                ])
+                dz = np.clip(dz, -1, 1)
 
-                # ===== 一次性更新（关键🔥）=====
-                current_target += move_vec
+                move_z = np.array([0.0, 0.0, dz * Z_STEP])
 
-                # ===== 限制范围 =====
-                current_target[:] = np.clip(current_target, MIN_BOUND, MAX_BOUND)
+                # ===== 合并 =====
+                current_target += move_xy + move_z
 
-        # ===== 可视化 =====
+                # ===== 软边界 =====
+                for i in range(3):
+                    if current_target[i] < MIN_BOUND[i]:
+                        current_target[i] += 0.003
+                    elif current_target[i] > MAX_BOUND[i]:
+                        current_target[i] -= 0.003
+
+                # ===== 更新基准 =====
+                base_hand_size = 0.95 * base_hand_size + 0.05 * hand_size
+
+        # ===== UI =====
         cv2.circle(frame, center, RADIUS, (0, 255, 0), 2)
 
         cv2.putText(frame, f"XYZ: {np.round(current_target,3)}",
@@ -149,9 +169,18 @@ def camera_loop():
         cv2.putText(frame, f"Gripper: {gripper}",
                     (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,200,255), 2)
 
+        # ===== Z进度条 =====
+        z_norm = (current_target[2] - MIN_BOUND[2]) / (MAX_BOUND[2] - MIN_BOUND[2])
+        bar_x = int(20 + z_norm * 200)
+
+        cv2.rectangle(frame, (20, 100), (220, 120), (100, 100, 100), 2)
+        cv2.rectangle(frame, (20, 100), (bar_x, 120), (0, 255, 255), -1)
+
+        cv2.putText(frame, "Z", (230, 115),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
         cv2.imshow("Gesture Control", frame)
 
-        # ESC退出
         if cv2.waitKey(1) & 0xFF == 27:
             break
 
